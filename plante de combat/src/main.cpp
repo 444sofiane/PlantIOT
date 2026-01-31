@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <AzIoTSasToken.h>
-#include "SerialLogger.h"
+#include <SerialLogger.h>
 #include <WiFi.h>
 #include <az_core.h>
 #include <azure_ca.h>
@@ -12,10 +12,9 @@
 #include "ArduinoJson.h"
 
 /* Azure auth data */
-const char* deviceKey = "kPYCEWsFADFkTaioMXSufcy0YQ+38/SdmAIoTDYVzUE=";	 // Azure Primary key for device
+char* deviceKey = "kPYCEWsFADFkTaioMXSufcy0YQ+38/SdmAIoTDYVzUE=";	 // Azure Primary key for device
 const char* iotHubHost = "IOTProjectFOIHub.azure-devices.net";		 //[Azure IoT host name].azure-devices.net
 const int tokenDuration = 60;
-
 const char* deviceId = "IOTProjectDevice";  // Device ID as specified in the list of devices on IoT Hub
 
 /* MQTT data for IoT Hub connection */
@@ -23,29 +22,28 @@ const char* mqttBroker = iotHubHost;  // MQTT host = IoT Hub link
 const int mqttPort = AZ_IOT_DEFAULT_MQTT_CONNECT_PORT;	// Secure MQTT port
 const char* mqttC2DTopic = AZ_IOT_HUB_CLIENT_C2D_SUBSCRIBE_TOPIC;	// Topic where we can receive cloud to device messages
 
-// These three are just buffers - actual clientID/username/password is generated
-// using the SDK functions in initIoTHub()
 char mqttClientId[128];
 char mqttUsername[128];
 char mqttPasswordBuffer[200];
 char publishTopic[200];
-
-/* Auth token requirements */
+const int humiditySensPin = 34;
 
 uint8_t sasSignatureBuffer[256];  // Make sure it's of correct size, it will just freeze otherwise :/
 
 az_iot_hub_client client;
 AzIoTSasToken sasToken(
-	&client, az_span_create_from_str((char*)deviceKey),
+	&client, az_span_create_from_str(deviceKey),
 	AZ_SPAN_FROM_BUFFER(sasSignatureBuffer),
 	AZ_SPAN_FROM_BUFFER(
 		mqttPasswordBuffer));	 // Authentication token for our specific device
 
 
-const int DHT_PIN = 21;
+const int dhtPin = 21; // It used to be tied to 21, but 21 and 22 are default pins for I2C communication (for OLED screens eg.), so we will leave them unused  
+
 
 DHTesp dht;
-SerialLogger LogIOT;
+
+/* WiFi things */
 
 WiFiClientSecure wifiClient;
 PubSubClient mqttClient(wifiClient);
@@ -54,11 +52,11 @@ const char* ssid = "SofianeIOT";
 const char* pass = "repz7250";
 short timeoutCounter = 0;
 
-void setupWiFi() {
-	LogIOT.Info("Connecting to WiFi");
 
-	
-  wifiClient.setInsecure();
+void setupWiFi() {
+	Logger.Info("Connecting to WiFi");
+
+	wifiClient.setCACert((const char*)ca_pem); // We are using TLS to secure the connection, therefore we need to supply a certificate (in the SDK)
 
 	WiFi.mode(WIFI_STA);
 	WiFi.begin(ssid, pass);
@@ -71,108 +69,110 @@ void setupWiFi() {
 		if (timeoutCounter >= 20) ESP.restart(); // Or restart if we waited for too long, not much else can you do
 	}
 
-	LogIOT.Info("WiFi connected");
+	Logger.Info("WiFi connected");
 }
-
 
 
 // Use pool pool.ntp.org to get the current time
 // Define a date on 1.1.2023. and wait until the current time has the same year (by default it's 1.1.1970.)
 void initializeTime() {	 // MANDATORY or SAS tokens won't generate
+  Logger.Info("Setting time using SNTP");
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  time_t now = time(NULL);
+  std::tm tm{};
+  tm.tm_year = 2023; // Define a date on 1.1.2023. and wait until the current time has the same year (by default it's 1.1.1970.)
 
-}
-
-void setupDHTSensor() { // NOTE: change to DHT22 if you are using the white temp/humidity sensor
-  dht.setup(DHT_PIN, DHTesp::DHT22);
-}
-
-// MQTT is a publish-subscribe based, therefore a callback function is called whenever something is published on a topic that device is subscribed to
-// It's also a binary-safe protocol, therefore instead of transfering text, bytes are transfered and they aren't null terminated - so we need ot add \0 to terminate the string
-void callback(char *topic, byte *payload, unsigned int length) {
-
-  LogIOT.Info("Message arrived on topic: " + String(topic));
-  String message = "";
-  for (unsigned int i = 0; i < length; i++) {
-    message += (char)payload[i];
+  while (now < std::mktime(&tm)) // Since we are using an Internet clock, it may take a moment for clocks to sychronize
+  {
+    delay(500);
+    Serial.print(".");
+    now = time(NULL);
   }
-  LogIOT.Info("Message: " + message);
 }
 
-void connectMQTT() {
+void setupDHTSensor() { // NOTE: change to DHT11 if you are using the blue temp/humidity sensor
+  dht.setup(dhtPin, DHTesp::DHT22);
+}
+
+void callback(char *topic, byte *payload, unsigned int length) { 
+  payload[length] = '\0';
+  String message = String((char *)payload);
+  String topicStr = String(topic);
+
+  Logger.Info("Callback:" + topicStr + ": " + message);
+}
+
+bool connectMQTT() {
+  mqttClient.setBufferSize(1024); // The default size is defined in MQTT_MAX_PACKET_SIZE to be 256 bytes, which is too small for Azure MQTT messages, therefore needs to be increased or it will just crash without any info
+
+  if (sasToken.Generate(tokenDuration) != 0) // SAS tokens need to be generated in order to generate a password for the connection
+  {
+    Logger.Error("Failed generating SAS token");
+    return false;
+  }
+  else
+    Logger.Info("SAS token generated");
+
   mqttClient.setServer(mqttBroker, mqttPort);
   mqttClient.setCallback(callback);
 
-  while (!mqttClient.connected()) {
-    LogIOT.Info("Connecting to MQTT...");
-
-    // Generate new SAS token for authentication
-    if (az_result_failed(sasToken.Generate(tokenDuration))) {
-      LogIOT.Error("Failed generating SAS token");
-      delay(1000);
-      continue;
-    }
-
-    String mqttPassword = String((char*)sasToken.Get()._internal.ptr, sasToken.Get()._internal.size);
-
-    LogIOT.Info("Using MQTT Client ID: " + String(mqttClientId));
-    LogIOT.Info("Using MQTT Username: " + String(mqttUsername));
-    //LogIOT.Info("Using MQTT Password: " + mqttPassword); // Uncomment for debug purposes only, do NOT log passwords in production code!
-
-    if (mqttClient.connect(mqttClientId, mqttUsername, mqttPassword.c_str())) {
-      LogIOT.Info("MQTT connected");
-
-      // Subscribe to cloud-to-device topic to receive messages from IoT Hub
-      if (mqttClient.subscribe(mqttC2DTopic)) {
-        LogIOT.Info("Subscribed to C2D topic");
-      } else {
-        LogIOT.Error("Failed subscribing to C2D topic");
-      }
-
-    } else {
-      LogIOT.Error("Failed connecting to MQTT, rc=" + String(mqttClient.state()));
-      delay(2000);
-    }
-  }
-  
+  return true;
 }
 
 void mqttReconnect() {
   while (!mqttClient.connected()) {
-    connectMQTT();
+    Logger.Info("Attempting MQTT connection...");
+    const char *mqttPassword = (const char *)az_span_ptr(sasToken.Get()); // Just in case that the SAS token has been regenerated since the last MQTT connection, get it again
+    
+    if (mqttClient.connect(mqttClientId, mqttUsername, mqttPassword)) { // Either connect or wait for 5 seconds (we can block here since without IoT Hub connection we can't do much)
+      Logger.Info("MQTT connected");
+      mqttClient.subscribe(mqttC2DTopic); // If connected, (re)subscribe to the topic where we can receive messages sent from the IoT Hub 
+    } else {
+      Logger.Info("Trying again in 5 seconds");
+      delay(5000);
+    }
   }
 }
 
 
 String getTelemetryData() { // Get the data and pack it in a JSON message
-  JsonDocument doc; // Create a JSON document we'll reuse to serialize our data into JSON
+  StaticJsonDocument<128> doc; // Create a JSON document we'll reuse to serialize our data into JSON
   String output = "";
 
-
-	JsonObject Ambient = doc["Ambient"].to<JsonObject>();
+	JsonObject Ambient = doc.createNestedObject("Ambient");
 	Ambient["Temperature"] = dht.getTemperature();
 	Ambient["Humidity"] = dht.getHumidity();
+  Ambient["SoilHumidity"] = analogRead(humiditySensPin);
 
 	doc["DeviceID"] = (String)deviceId;
 
 	serializeJson(doc, output);
 
-	LogIOT.Info(output);
+	Logger.Info(output);
   return output;
 }
 
 void sendTelemetryData() {
-
+  String telemetryData = getTelemetryData();
+  mqttClient.publish(publishTopic, telemetryData.c_str());
 }
 
 long lastTime, currentTime = 0;
-int interval = 5000;
+int interval = 3000;
 void checkTelemetry() { // Do not block using delay(), instead check if enough time has passed between two calls using millis() 
+  currentTime = millis();
 
+  if (currentTime - lastTime >= interval) { // Subtract the current elapsed time (since we started the device) from the last time we sent the telemetry, if the result is greater than the interval, send the data again
+    Logger.Info("Sending telemetry...");
+    sendTelemetryData();
+
+    lastTime = currentTime;
+  }
 }
 
 void sendTestMessageToIoTHub() {
   az_result res = az_iot_hub_client_telemetry_get_publish_topic(&client, NULL, publishTopic, 200, NULL ); // The receive topic isn't hardcoded and depends on chosen properties, therefore we need to use az_iot_hub_client_telemetry_get_publish_topic()
-  LogIOT.Info(String(publishTopic));
+  Logger.Info(String(publishTopic));
   
   mqttClient.publish(publishTopic, deviceId); // Use https://github.com/Azure/azure-iot-explorer/releases to read the telemetry
 }
@@ -186,7 +186,7 @@ bool initIoTHub() {
           az_span_create((unsigned char *)deviceId, strlen(deviceId)),
           &options)))
   {
-    LogIOT.Error("Failed initializing Azure IoT Hub client");
+    Logger.Error("Failed initializing Azure IoT Hub client");
     return false;
   }
 
@@ -194,7 +194,7 @@ bool initIoTHub() {
   if (az_result_failed(az_iot_hub_client_get_client_id(
           &client, mqttClientId, sizeof(mqttClientId) - 1, &client_id_length))) // Get the actual client ID (not our internal ID) for the device
   {
-    LogIOT.Error("Failed getting client id");
+    Logger.Error("Failed getting client id");
     return false;
   }
 
@@ -202,15 +202,15 @@ bool initIoTHub() {
   if (az_result_failed(az_iot_hub_client_get_user_name(
           &client, mqttUsername, sizeof(mqttUsername), &mqttUsernameSize))) // Get the MQTT username for our device
   {
-    LogIOT.Error("Failed to get MQTT username ");
+    Logger.Error("Failed to get MQTT username ");
     return false;
   }
 
-  LogIOT.Info("Great success");
-  LogIOT.Info("Client ID: " + String(mqttClientId));
-  LogIOT.Info("Username: " + String(mqttUsername));
+  Logger.Info("Great success");
+  Logger.Info("Client ID: " + String(mqttClientId));
+  Logger.Info("Username: " + String(mqttUsername));
 
-  return true;
+  return true;  
 }
 
 void setup() {
@@ -222,14 +222,25 @@ void setup() {
     mqttReconnect();
   }
 
-	setupDHTSensor();
+  sendTestMessageToIoTHub();
 
-  LogIOT.Info("Setup done");
+  pinMode(humiditySensPin, OUTPUT);
+	setupDHTSensor();
+  
+   // Just to initialize the pin
+
+  Logger.Info("Setup done");
+
 }
 
 
 void loop() { // No blocking in the loop, constantly check if we are connected and gather the data if necessary
+  if (!mqttClient.connected()) mqttReconnect();
+  if (sasToken.IsExpired()) {
+    connectMQTT();
+  }
+
+  mqttClient.loop();
+
   checkTelemetry();
-
-
 }
