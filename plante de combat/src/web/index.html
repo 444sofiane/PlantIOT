@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Plant Monitor - Voice Interface</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌱 My Talking Plant</h1>
+            <p class="subtitle">Ask your plant how it's feeling!</p>
+        </header>
+
+        <main>
+            <div class="plant-card">
+                <div class="plant-icon">🪴</div>
+                <div id="plantResponse" class="plant-response">
+                    <p>Tap "Talk to Plant" to ask me how I'm doing!</p>
+                </div>
+            </div>
+
+            <div class="sensor-grid">
+                <div class="sensor-card">
+                    <div class="sensor-icon">💧</div>
+                    <div class="sensor-label">Soil Moisture</div>
+                    <div id="moisture" class="sensor-value">--</div>
+                </div>
+                <div class="sensor-card">
+                    <div class="sensor-icon">🌡️</div>
+                    <div class="sensor-label">Temperature</div>
+                    <div id="temperature" class="sensor-value">--</div>
+                </div>
+                <div class="sensor-card">
+                    <div class="sensor-icon">💨</div>
+                    <div class="sensor-label">Humidity</div>
+                    <div id="humidity" class="sensor-value">--</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="talkBtn" class="btn-primary">
+                    <span class="mic-icon">🎤</span>
+                    <span id="btnText">Talk to Plant</span>
+                </button>
+                
+                <button id="checkStatusBtn" class="btn-secondary">
+                    Check Status
+                </button>
+            </div>
+
+            <div id="status" class="status-message"></div>
+            
+            <div class="history-section">
+                <h3>Recent Conversations</h3>
+                <div id="history" class="history-list"></div>
+            </div>
+        </main>
+
+        <footer>
+            <p>🎓 IoT Lab Project - Faculty of Organization and Informatics</p>
+        </footer>
+    </div>
+
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <h2>⚙️ Configuration Required</h2>
+            <p>Please enter your Azure credentials:</p>
+            
+            <div class="form-group">
+                <label for="speechKey">Azure Speech API Key:</label>
+                <input type="password" id="speechKey" placeholder="Your Speech API Key">
+            </div>
+            
+            <div class="form-group">
+                <label for="speechRegion">Speech Region:</label>
+                <input type="text" id="speechRegion" placeholder="e.g., northeurope" value="northeurope">
+            </div>
+            
+            <div class="form-group">
+                <label for="logicAppUrl">Logic App URL:</label>
+                <input type="text" id="logicAppUrl" placeholder="https://prod-xx.logic.azure.com/...">
+            </div>
+            
+            <div class="form-group">
+                <label for="deviceId">Device ID:</label>
+                <input type="text" id="deviceId" placeholder="e.g., PlantMonitor001" value="PlantMonitor001">
+            </div>
+            
+            <button id="saveConfig" class="btn-primary">Save Configuration</button>
+            <p class="config-note">💡 Configuration is saved in browser localStorage</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
