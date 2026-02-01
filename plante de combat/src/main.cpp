@@ -52,6 +52,9 @@ const char* ssid = "SofianeIOT";
 const char* pass = "repz7250";
 short timeoutCounter = 0;
 
+/* Device Twin timing */
+unsigned long lastTwinUpdate = 0;
+
 
 void setupWiFi() {
 	Logger.Info("Connecting to WiFi");
@@ -170,6 +173,30 @@ void checkTelemetry() { // Do not block using delay(), instead check if enough t
   }
 }
 
+// Update Device Twin with sensor data every 10 seconds.
+// The Logic App reads the Device Twin to get the sensor values,
+// so this is what connects the Arduino to the web app.
+void updateDeviceTwin() {
+  float temp = dht.getTemperature();
+  float hum = dht.getHumidity();
+  int soilRaw = analogRead(humiditySensPin);
+  int soilPercent = map(soilRaw, 4095, 1500, 0, 100);
+  soilPercent = constrain(soilPercent, 0, 100);
+
+  StaticJsonDocument<256> doc;
+  doc["temperature"] = temp;
+  doc["humidity"] = hum;
+  doc["moisture"] = soilPercent;
+
+  String payload;
+  serializeJson(doc, payload);
+
+  String twinTopic = "$iothub/twin/PATCH/properties/reported/?$rid=1";
+  mqttClient.publish(twinTopic.c_str(), payload.c_str());
+
+  Logger.Info("Twin updated: " + payload);
+}
+
 void sendTestMessageToIoTHub() {
   az_result res = az_iot_hub_client_telemetry_get_publish_topic(&client, NULL, publishTopic, 200, NULL ); // The receive topic isn't hardcoded and depends on chosen properties, therefore we need to use az_iot_hub_client_telemetry_get_publish_topic()
   Logger.Info(String(publishTopic));
@@ -224,10 +251,8 @@ void setup() {
 
   sendTestMessageToIoTHub();
 
-  pinMode(humiditySensPin, OUTPUT);
+  pinMode(humiditySensPin, INPUT);  // Fixed: was OUTPUT, needs to be INPUT to read the sensor
 	setupDHTSensor();
-  
-   // Just to initialize the pin
 
   Logger.Info("Setup done");
 
@@ -243,4 +268,11 @@ void loop() { // No blocking in the loop, constantly check if we are connected a
   mqttClient.loop();
 
   checkTelemetry();
+
+  // Update Device Twin every 10 seconds so the Logic App can read sensor data
+  unsigned long now = millis();
+  if (now - lastTwinUpdate >= 10000) {
+    updateDeviceTwin();
+    lastTwinUpdate = now;
+  }
 }

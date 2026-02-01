@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Plant Monitor - Voice Interface</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Azure Speech SDK -->
     <script src="https://aka.ms/csspeech/jsbrowserpackageraw"></script>
 </head>
 <body>
@@ -15,6 +16,7 @@
         </header>
 
         <main>
+            <!-- Plant Status Display -->
             <div class="plant-card">
                 <div class="plant-icon">🪴</div>
                 <div id="plantResponse" class="plant-response">
@@ -22,6 +24,7 @@
                 </div>
             </div>
 
+            <!-- Sensor Data Display -->
             <div class="sensor-grid">
                 <div class="sensor-card">
                     <div class="sensor-icon">💧</div>
@@ -40,6 +43,7 @@
                 </div>
             </div>
 
+            <!-- Voice Controls -->
             <div class="controls">
                 <button id="talkBtn" class="btn-primary">
                     <span class="mic-icon">🎤</span>
@@ -51,10 +55,15 @@
                 </button>
             </div>
 
+            <!-- Status Messages -->
             <div id="status" class="status-message"></div>
             
+            <!-- Conversation History -->
             <div class="history-section">
-                <h3>Recent Conversations</h3>
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <h3>Recent Conversations</h3>
+                    <button id="clearHistoryBtn">🗑️ Clear</button>
+                </div>
                 <div id="history" class="history-list"></div>
             </div>
         </main>
@@ -64,6 +73,7 @@
         </footer>
     </div>
 
+    <!-- Configuration Modal -->
     <div id="configModal" class="modal">
         <div class="modal-content">
             <h2>⚙️ Configuration Required</h2>
@@ -76,7 +86,7 @@
             
             <div class="form-group">
                 <label for="speechRegion">Speech Region:</label>
-                <input type="text" id="speechRegion" placeholder="e.g., northeurope" value="northeurope">
+                <input type="text" id="speechRegion" placeholder="e.g., westeurope" value="westeurope">
             </div>
             
             <div class="form-group">
