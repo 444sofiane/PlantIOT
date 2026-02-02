@@ -4,7 +4,6 @@ let recognizer = null;
 let isListening = false;
 let conversationHistory = [];
 
-// DOM Elements
 const talkBtn = document.getElementById('talkBtn');
 const checkStatusBtn = document.getElementById('checkStatusBtn');
 const btnText = document.getElementById('btnText');
@@ -103,7 +102,6 @@ async function callLogicApp(body) {
 
     console.log('Logic App status inicial:', response.status);
 
-    // Si devuelve 202, necesitamos hacer polling del Location header
     if (response.status === 202) {
         const locationUrl = response.headers.get('Location');
         console.log('202 recibido. Location URL:', locationUrl);
@@ -113,7 +111,6 @@ async function callLogicApp(body) {
             return null;
         }
 
-        // Hacer polling cada 2 segundos, máximo 15 intentos (30 segundos)
         for (let i = 0; i < 15; i++) {
             await new Promise(resolve => setTimeout(resolve, 2000));
             console.log('Polling intento ' + (i + 1) + '...');
@@ -125,11 +122,9 @@ async function callLogicApp(body) {
                 console.log('Respuesta recibida en intento ' + (i + 1));
                 break;
             }
-            // Si sigue siendo 202, seguir esperando
         }
     }
 
-    // Ya tenemos la respuesta (200) o se acabó el tiempo
     const text = await response.text();
     console.log('Logic App respuesta cruda:', text);
 
@@ -214,6 +209,7 @@ function stopListening() {
     btnText.textContent = 'Talk to Plant';
 }
 
+
 async function handleUserQuestion(question) {
     showStatus('Processing your question...', 'success');
     plantResponse.innerHTML = '<p>Thinking...</p>';
@@ -222,7 +218,8 @@ async function handleUserQuestion(question) {
         const data = await callLogicApp({
             action: 'askPlant',
             question: question,
-            deviceId: window.config.deviceId
+            deviceId: window.config.deviceId,
+            history: conversationHistory
         });
 
         if (data && data.response) {
@@ -256,7 +253,8 @@ async function checkPlantStatus() {
         const data = await callLogicApp({
             action: 'getStatus',
             question: 'What is your status?',
-            deviceId: window.config.deviceId
+            deviceId: window.config.deviceId,
+            history: conversationHistory
         });
 
         if (data && data.response) {
@@ -274,6 +272,7 @@ async function checkPlantStatus() {
         plantResponse.innerHTML = '<p>Could not retrieve plant status</p>';
     }
 }
+
 
 async function updateSensorData() {
     if (!window.config || !window.config.logicAppUrl) {
@@ -378,7 +377,6 @@ function showStatus(message, type) {
     if (type) statusDiv.classList.add(type);
 }
 
-// Cerrar modal al clickear fuera
 configModal.addEventListener('click', (e) => {
     if (e.target === configModal && window.config && window.config.speechKey && window.config.logicAppUrl) {
         hideConfigModal();
