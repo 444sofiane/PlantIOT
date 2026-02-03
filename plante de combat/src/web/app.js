@@ -296,7 +296,7 @@ async function updateSensorData() {
 }
 
 function updateSensorDisplay(sensorData) {
-    if (sensorData.moisture !== undefined) moistureEl.textContent = sensorData.moisture + '%';
+    if (sensorData.moisture !== undefined) moistureEl.textContent = (100 - sensorData.moisture) + '%';
     if (sensorData.temperature !== undefined) temperatureEl.textContent = sensorData.temperature + '°C';
     if (sensorData.humidity !== undefined) humidityEl.textContent = sensorData.humidity + '%';
 }
